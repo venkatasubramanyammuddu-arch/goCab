@@ -3,7 +3,7 @@ import os
 import psycopg
 import redis
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, PlainTextResponse
 
 app = FastAPI(title="Cab App")
 
@@ -37,3 +37,19 @@ def health():
     healthy = all(v == "ok" for v in checks.values())
     body = {"status": "ok" if healthy else "degraded", **checks}
     return JSONResponse(body, status_code=200 if healthy else 503)
+
+@app.get("/test")
+def test():
+    body = {"Mode": "testing" }
+    return JSONResponse(body)
+@app.get("/hello")
+def hello():
+    return {"message": "hi"}            # JSON, with no extra work
+
+@app.get("/page", response_class=HTMLResponse)
+def page():
+    return "<h1>Hello cab app</h1>"     # the browser renders this as a page
+
+@app.get("/ping", response_class=PlainTextResponse)
+def ping():
+    return "pong"  
