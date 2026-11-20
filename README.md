@@ -9,7 +9,7 @@ A small cab booking app built in Python (FastAPI) to learn system design. It fol
 | Service | Image | Port | Purpose |
 |---|---|---|---|
 | `app` | built from `Dockerfile` | 8000 | FastAPI application |
-| `db` | `postgres:16` | 5432 | PostgreSQL database |
+| `db` | `postgres:16` | 5433 on your machine (5432 inside Docker) | PostgreSQL database |
 | `redis` | `redis:7` | 6379 | Redis (cache, rate limits, locations later) |
 
 Inside Docker's private network the services reach each other by name: the app connects to `db` and `redis`, not `localhost`. Inside a container, `localhost` means that container itself.
@@ -86,6 +86,27 @@ docker compose stop app      # the browser page now fails
 docker compose start app     # the page works again
 ```
 
+## Database migrations (Alembic)
+
+Tables are defined as Python classes in `app/models/`. Alembic keeps a versioned history of schema changes in `migrations/versions/`.
+
+| Goal | Command |
+|---|---|
+| Apply all pending migrations (inside the container) | `docker compose exec app alembic upgrade head` |
+| Show the current database version | `docker compose exec app alembic current` |
+| Undo the last migration | `docker compose exec app alembic downgrade -1` |
+| Look at a table | `docker compose exec db psql -U cab -d cabapp -c "\d users"` |
+
+Creating a new migration after changing a model (runs on your machine, because the generated file must land in your project folder; the database is reachable on port 5433):
+
+```
+set -a; . ./.env; set +a      # Git Bash: load .env
+export DATABASE_URL="postgresql://$POSTGRES_USER:$POSTGRES_PASSWORD@localhost:5433/$POSTGRES_DB" REDIS_URL="redis://localhost:6379/0"
+.venv/Scripts/python -m alembic revision --autogenerate -m "describe the change"
+```
+
+Always read the generated file before applying it, then rebuild (`docker compose up -d --build app`) and run `upgrade head`.
+
 ## What the health check means
 
 `GET /health` runs `SELECT 1` on Postgres and `PING` on Redis, each with a 2 second timeout.
@@ -121,7 +142,8 @@ uvicorn app.main:app --reload --port 8000
 | Browser says "refused to connect" on port 8000 | The `app` container is not running. Check `docker compose ps` and `docker compose logs app`. |
 | `/health` returns 503 right after `up` | Postgres or Redis is still starting. Wait a few seconds and retry. |
 | Code changes do not show up | Rebuild with `docker compose up -d --build`. |
-| Port already in use | Another program uses 8000, 5432 or 6379. Stop it or change the left-hand number in `ports:` in `docker-compose.yml`. |
+| Port already in use | Another program uses 8000, 5433 or 6379. Stop it or change the left-hand number in `ports:` in `docker-compose.yml`. |
+| Login to Postgres from your machine fails with "password authentication failed" | A PostgreSQL installed on Windows also uses port 5432 and answers instead of Docker. That is why our container is published on 5433. Use port 5433. |
 | `pip install` fails with `CERTIFICATE_VERIFY_FAILED` | Antivirus HTTPS inspection. Set `PIP_CERT` to the antivirus certificate file once to install `truststore`, then use `PIP_USE_FEATURE=truststore`. |
 | `git push` fails with an SSL error | In this repo only: `git config http.sslBackend schannel`. |
 | `git push` says authentication failed | Run it without disabling prompts so Git Credential Manager can open the sign-in window. |
